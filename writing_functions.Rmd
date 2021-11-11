@@ -1,0 +1,232 @@
+---
+title: "writing_functions"
+author: "Fang Liu"
+date: "11/10/2021"
+output: html_document
+---
+
+Load required packages. 
+```{r, message = FALSE}
+library(tidyverse)
+library(rvest)
+
+set.seed(1)
+```
+
+### My first function!
+```{r}
+x_vec = rnorm(25, mean = 5, sd = 3)
+
+(x_vec - mean(x_vec)) / sd(x_vec)
+```
+
+When I want to do this multiple times, I can use a function. 
+```{r}
+z_scores = function(x) {
+  z = (x - mean(x)) / sd(x)
+  z
+}
+
+z_scores(x_vec)
+```
+
+Test the function:
+```{r, eval=FALSE}
+z_scores(3)
+z_scores("hello")
+z_scores(iris)
+z_scores(sample(c(TRUE, FALSE), 25, replace = TRUE))
+```
+
+We want to "fail noisily and as soon as possible".... Thus, we can add some checks on the argument values using conditional statements
+```{r}
+z_scores = function(x) {
+  
+  if (!is.numeric(x)){
+    stop("Argument x should be a numeric")
+  } else if (length(x) == 1) {
+    stop("Z scores cannot be computed for length 1 vectors")
+  }
+  
+  z = (x - mean(x)) / sd(x)
+  z
+}
+
+z_scores(x_vec)
+```
+
+
+### Multiple OUTPUTS 
+
+What if we want to return the mean and standard deviation?
+Option 1: store each of the variables in a named list and return that list
+```{r}
+mean_and_sd = function(x) {
+  
+  if (!is.numeric(x)){
+    stop("Argument x should be a numeric")
+  } else if (length(x) == 1) {
+    stop("Cannot be computed for length 1 vectors")
+  }
+  
+  mean_x = mean(x)
+  sd_x = sd(x)
+  
+  list(mean = mean_x, 
+       sd = sd_x)
+}
+
+mean_and_sd(x_vec)
+```
+
+Option 2: store values in a data frame (easier to use other tools :) 
+```{r}
+mean_and_sd = function(x) {
+  
+  if (!is.numeric(x)){
+    stop("Argument x should be a numeric")
+  } else if (length(x) == 1) {
+    stop("Cannot be computed for length 1 vectors")
+  }
+  
+  mean_x = mean(x)
+  sd_x = sd(x)
+  
+  tibble(
+    mean = mean_x,
+    sd = sd_x
+  )
+}
+
+mean_and_sd(x_vec)
+```
+
+### Multiple INPUTS 
+
+Example: take a sample size along with a true mean and sd, simulates data from a normal distribution and return the estimated mean & sd
+```{r}
+sim_data = tibble(
+  x = rnorm(30, mean = 2, sd = 3)
+)
+
+sim_data %>% 
+  summarize(
+    mu_hat = mean(x),
+    sigma_hat = sd(x)
+  )
+```
+
+But... what if I want to change the sample size and parameters (i.e., the arguments)
+```{r}
+sim_mean_sd = function(n, mu = 2, sigma = 3){
+  
+  sim_data = tibble(
+    x = rnorm(n, mean = mu, sd = sigma),
+  )
+  
+  sim_data %>% 
+    summarize(
+      mu_hat = mean(x),
+      sigma_hat = sd(x)
+    )
+}
+
+sim_mean_sd(10)
+sim_mean_sd(1000)
+
+#as sample sample increases, the mean and sd gets closer to the "true" value
+```
+
+Two type of argument matching: 
+1) positional matching: sim_mean_sd(30, 5, 1)
+2) named matching: sim_mean_sd(sd = 1, n = 30, mu = 5) 
+*Named arguments can be supplied in any order!
+
+### Revisiting some past examples  
+Write a function to scrape review information for any URL to an Amazon review page
+```{r}
+read_page_reviews <- function(url) {
+  
+  html = read_html(url)
+  
+  review_titles = 
+    html %>%
+    html_nodes(".a-text-bold span") %>%
+    html_text()
+  
+  review_stars = 
+    html %>%
+    html_nodes("#cm_cr-review_list .review-rating") %>%
+    html_text() %>%
+    str_extract("^\\d") %>%
+    as.numeric()
+  
+  review_text = 
+    html %>%
+    html_nodes(".review-text-content span") %>%
+    html_text() %>% 
+    str_replace_all("\n", "") %>% 
+    str_trim()
+  
+  tibble(
+    title = review_titles,
+    stars = review_stars,
+    text = review_text
+  )
+}
+```
+
+Next, use this function to read in reviews from a few pages and combine the results 
+```{r}
+url_base = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber="
+
+vec_urls = str_c(url_base, 1:5)
+
+dynamite_reviews = bind_rows(
+  read_page_reviews(vec_urls[1]),
+  read_page_reviews(vec_urls[2]),
+  read_page_reviews(vec_urls[3]),
+  read_page_reviews(vec_urls[4]),
+  read_page_reviews(vec_urls[5])
+)
+
+dynamite_reviews
+```
+
+### Functions as arguments  
+Ability to pass **functions** as arguments into functions?  
+
+Example: function that takes a vector and function as input and returns the results of applying that function to the vector input
+```{r}
+x_vec = rnorm(25, 0, 1)
+
+my_summary = function(x, summ_func) {
+  summ_func(x)
+}
+
+#test the function
+my_summary(x_vec, sd)
+my_summary(x_vec, IQR)
+my_summary(x_vec, var)
+```
+
+### Scoping and names  
+```{r}
+f = function(x){
+  z = x + y
+  z
+}
+
+x = 1
+y = 2
+
+f(x = y)
+
+#f(x= 2) --> function(2); return z = 2 + 2 = 4??
+```
+
+In this example, we define a variable in global environment and use it in your function... but it isn't passed as a argument... 
+
+
+
+
