@@ -1,0 +1,230 @@
+---
+title: "iteration_and_listcols"
+author: "Fang Liu"
+date: "11/9/2021"
+output: github_document
+---
+
+Load required packages.
+```{r}
+library(tidyverse)
+
+set.seed(1)
+```
+
+NOTE: don't use sapply(), base R stuff... 
+Dataframe is a special type of list... 
+
+
+## copy function 
+```{r}
+mean_and_sd = function(x) {
+  
+  if (!is.numeric(x)) {
+    stop("Argument x should be numeric")
+  } else if (length(x) == 1) {
+    stop("Cannot be computed for length 1 vectors")
+  }
+  
+  mean_x = mean(x)
+  sd_x = sd(x)
+
+  list(mean = mean_x, 
+       sd = sd_x)
+}
+```
+
+## Lists
+```{r}
+l = 
+  list(
+    vec_numeric = 5:8,
+    vec_logic = c(TRUE, FALSE),
+    summary = summary(rnorm(1000, mean = 5, sd = 3))
+  )
+
+#different ways of extraction 
+l[[3]]
+l$summary
+l[["summary"]]
+
+```
+
+## List of normals
+```{r}
+list_norms = 
+  list(
+    a = rnorm(50, mean = 2, sd = 1),
+    b = rnorm(50, mean = 5, sd = 3),
+    c = rnorm(50, mean = 20, sd = 1.2),
+    d = rnorm(50, mean = -12, sd = 1.2)
+  )
+
+# use the mean_and_sd() to find the mean and sd of each list
+mean_and_sd(list_norms[[1]])
+mean_and_sd(list_norms[[2]])
+mean_and_sd(list_norms[[3]])
+```
+
+## for loop :D 
+Use for loop to iterate over my list of normal. 
+```{r}
+#create a vector of type=lists and length of 4
+output = vector("list", length = 4)
+
+# Method 1 - manually 
+#output[[1]] = mean_and_sd(list_norms[[1]])
+
+# Method 2 - using methods 
+for (i in 1:4) {
+  output[i] = mean_and_sd(list_norms[[i]])
+}
+
+output
+```
+
+In general, you want your input and output to have the same length! 
+
+## Maps
+```{r}
+output = map(list_norms, mean_and_sd)
+output = map(list_norms, summary)
+
+#return a single number?
+output = map_dbl(list_norms, median)
+```
+
+## LIST COLUMNS! 
+```{r}
+list_col_df = 
+  tibble(
+    name = c("a", "b", "c", "d"),
+    norms = list_norms
+  )
+
+list_col_df %>% 
+  filter(name == "a")
+
+list_col_df %>% pull(name)
+list_col_df %>% pull(norms)
+
+list_col_df$norms[[1]]
+
+list_col_df %>% 
+  mutate(summaries = map(norms, mean_and_sd))
+
+#use map function on norms column using mean_and_sd and create a new column named summaries that contains the mean and sd
+
+```
+
+
+## revisit data
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728", "USC00519397", "USS0023B17S"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(
+      id, 
+      USW00094728 = "CentralPark_NY", 
+      USC00519397 = "Waikiki_HA",
+      USS0023B17S = "Waterhole_WA"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+Nest data within locations! 
+```{r}
+weather_nested = nest(weather_df, data = date:tmin)
+
+weather_nested %>% 
+  filter(name == "CentralPark_NY") %>% 
+  pull(data)
+
+#example: fit a linear regression of tmin and tmax
+lm(tmax ~ tmin, data=weather_nested$data[[1]])
+
+
+#create a weather function
+weather_lm = function(df){
+  lm(tmax ~ tmin, data = df)
+}
+
+weather_lm(weather_nested$data[[1]])
+
+#if we want linear model for each of the locations, use iteration! :D 
+
+map(weather_nested$data, weather_lm)
+
+weather_nested %>%
+  mutate(lm_results = map(data, weather_lm))
+
+#use the unnest() function to go back to original 
+#method 1
+unnest(weather_nested, data)
+
+#method 2 - using pipes 
+weather_nested %>% 
+  unnest(data)
+```
+
+## Napolean! 
+```{r}
+library(rvest)
+
+read_page_reviews = function(url) {
+  
+  html = read_html(url)
+  
+  title = 
+    html %>%
+    html_nodes("#cm_cr-review_list .review-title") %>%
+    html_text()
+  
+  stars = 
+    html %>%
+    html_nodes("#cm_cr-review_list .review-rating") %>%
+    html_text() %>%
+    str_extract("\\d") %>%
+    as.numeric()
+  
+  text = 
+    html %>%
+    html_nodes(".review-data:nth-child(5)") %>%
+    html_text()
+  
+  tibble(title, stars, text)
+}
+
+
+url_base = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber="
+vec_urls = str_c(url_base, 1:5)
+
+
+output = vector("list", 5)
+
+for (i in 1:5) {
+  output[[i]] = read_page_reviews(vec_urls[[i]])
+}
+
+dynamite_reviews = bind_rows(output)
+
+
+#using maps 
+dynamite_reviews = map_df(vec_urls, read_page_reviews)
+
+# using data frames and list columns
+dynamite_reviews = 
+  tibble(
+    page = 1:5,
+    urls = str_c(url_base, page)) %>% 
+  mutate(reviews = map(urls, read_page_reviews)) %>% 
+  unnest()
+```
+
+
+
